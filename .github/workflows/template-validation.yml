@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/monthly.yml"
+      - ".github/workflows/opencode.yml"
       - ".github/workflows/release.yml"
       - ".github/workflows/template-validation.yml"
       - "data/**"
@@ -88,6 +89,8 @@ jobs:
             -var macos_version=tahoe \
             -var 'xcode_version=["26.6"]' \
             -var expected_runtimes_file=data/expected.tahoe.runtimes.txt
+
+          validate templates/opencode.pkr.hcl
 
   build-vanilla:
     name: Build Vanilla Image (${{ matrix.macos_version }})

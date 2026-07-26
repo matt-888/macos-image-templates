@@ -1,0 +1,82 @@
+name: OpenCode Image
+
+on:
+  schedule:
+    - cron: "0 8 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: tart-image-builds
+  cancel-in-progress: false
+
+env:
+  TART_REGISTRY_HOSTNAME: ghcr.io
+  TART_REGISTRY_USERNAME: ${{ github.actor }}
+  TART_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  should-run:
+    name: Check Monthly Cadence
+    runs-on: [self-hosted, macOS, ARM64]
+    outputs:
+      build: ${{ steps.cadence.outputs.build }}
+    steps:
+      - name: Check first Saturday
+        id: cadence
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          build=false
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            build=true
+          else
+            day="$(date -u +%d)"
+            if (( 10#$day <= 7 )); then
+              build=true
+            fi
+          fi
+
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          if [[ "$build" != "true" ]]; then
+            echo "Not the first Saturday of the month; skipping image rebuild."
+          fi
+
+  build-and-publish:
+    name: Build and Publish OpenCode Image
+    needs: should-run
+    if: needs.should-run.outputs.build == 'true'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Tool versions
+        run: |
+          tart --version
+          packer --version
+
+      - name: Pull Xcode image
+        run: |
+          tart pull "ghcr.io/cirruslabs/macos-tahoe-xcode:latest"
+
+      - name: Build OpenCode image
+        run: |
+          packer init templates/opencode.pkr.hcl
+          packer build templates/opencode.pkr.hcl
+
+      - name: Push OpenCode image
+        run: |
+          tart push "tahoe-opencode:latest" "ghcr.io/cirruslabs/macos-tahoe-opencode:latest"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          tart delete "tahoe-opencode:latest" || true
